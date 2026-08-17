@@ -13,9 +13,9 @@ Họ tên: Nhữ Trọng Thành | Lớp: AICB-P2T2 | Ngày: 17-08-2026
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   LAB 17 · make verify
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  run 1/3 … 32.8s
-  run 2/3 … 31.6s
-  run 3/3 … 31.6s
+  run 1/3 … 48.3s
+  run 2/3 … 35.5s
+  run 3/3 … 36.2s
 
   BẢNG                  ỔN ĐỊNH          SỐ HÀNG     KỲ VỌNG   GHI CHÚ
   ──────────────────────────────────────────────────────────────────────────
@@ -37,7 +37,9 @@ Họ tên: Nhữ Trọng Thành | Lớp: AICB-P2T2 | Ngày: 17-08-2026
   silver_tickets.priority ∈ 1..4, không NULL  ✓ sạch
   quarantine_tickets đúng số bản ghi lỗi      ✓ 312 / 312
   gold_training_set: 1 hàng / 1 ticket        ✓ không lặp
-  bài mở rộng (EXTRA.md)                      — chưa chạy make seed-extra
+  dashboard rows scanned                      ✓ 5,000,000 → 136,934 (36.5×, cần ≥ 10×)
+    số file parquet                           ✓ 5,000 → 14
+    kết quả truy vấn không đổi                ✓
   DAG: catchup / max_active_runs              ✓ False / 1
 
   TỔNG KẾT
@@ -124,14 +126,29 @@ silver_schema:
 quarantine_tickets:
 ![quarantine_ticket](attachments/quarantine_ticket.jpg)
 
-## 4 · Mở rộng, không bắt buộc: bài trong EXTRA.md
+## 4 · Mở rộng
+
+### Bài A · Tối ưu truy vấn dashboard
 
 | | |
 |---|---|
-| Bài đã làm | Không làm |
-| Nguyên nhân | Không áp dụng |
-| Cách khắc phục | Không áp dụng |
-| Bằng chứng | Không áp dụng |
+| Triệu chứng | Dashboard phải đọc 5.000 file Parquet nhỏ. Phép đo ban đầu ghi nhận 5.000.000 rows scanned trong khi dữ liệu thật chỉ có 130.683 dòng. |
+| Nguyên nhân | Dataset cũ không partition nên đường dẫn file không mang thông tin về hai cột lọc customer_name và ngày. Điều kiện strftime(event_time, ...) còn bọc cột trong hàm, khiến engine không dùng được partition pruning và min/max statistics trước khi mở file. |
+| Cách khắc phục | tools/compact.py ghi lại dữ liệu thành 14 file partition theo event_date, sắp theo event_date, customer_name, event_time và đặt row group 2.048 dòng. queries/dashboard.sql đọc glob đệ quy với hive_partitioning và dùng điều kiện sargable event_date = date '2026-08-09'. |
+| Bằng chứng | Rows scanned giảm từ 5.000.000 xuống 136.934, tương đương 36,5 lần; số file giảm từ 5.000 xuống 14. Rows on disk giữ nguyên 130.683 và result hash giữ nguyên 4379e4c5d9f3. |
+
+Partition theo event_date tạo số thư mục nhỏ và ổn định vì dữ liệu chỉ có 14 ngày. Không partition theo customer_name vì 650 khách hàng sẽ tạo quá nhiều thư mục và file nhỏ. Trong mỗi partition ngày, việc sắp các hàng cùng customer_name nằm gần nhau giúp min/max của row group loại được các vùng không thuộc khách hàng cần tìm.
+
+### Bài B · Consumer gặp sự cố giữa batch
+
+| | |
+|---|---|
+| Triệu chứng | Thiết kế cũ commit offset trước khi ghi batch. Nếu tiến trình chết ở batch 7, offset đã tiến đến 3.500 nhưng database mới có 3.000 message; khi restart consumer đọc từ 3.500 nên mất vĩnh viễn 500 message. |
+| Nguyên nhân | Commit trước, ghi sau tạo semantics at-most-once: message không bị đọc lại nhưng có thể mất nếu sự cố xảy ra giữa hai thao tác. Nếu chỉ đảo thành ghi trước, commit sau với INSERT thuần thì hệ thống chuyển sang at-least-once nhưng batch replay sẽ tạo row trùng. |
+| Cách khắc phục | ingest/consumer.py ghi batch trước rồi mới commit offset. event_id được đặt làm primary key và phép ghi dùng ON CONFLICT (event_id) DO UPDATE để replay trở thành idempotent. Mỗi batch được đưa vào DuckDB bằng một INSERT từ các mảng UNNEST. |
+| Bằng chứng | make crash-test giết consumer ở batch 7 sau khi database đã ghi batch nhưng offset vẫn là 3.000. Lần restart đọc lại từ đó và ghi 17.000 message; kết quả cuối là 20.000 hàng / 20.000 event_id, không mất, không trùng và C = A. Bài mở rộng B đạt. |
+
+DO NOTHING chỉ bỏ qua message replay nếu event_id đã tồn tại, nên có thể giữ nội dung cũ khi cùng event_id được phát lại với dữ liệu đã sửa. DO UPDATE cập nhật các cột bằng nội dung mới nhất, vừa chống trùng vừa phản ánh thay đổi của message, vì vậy phù hợp hơn cho consumer này.
 
 ---
 
