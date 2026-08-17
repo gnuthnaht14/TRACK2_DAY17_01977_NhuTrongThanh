@@ -21,7 +21,7 @@ export DBT_PROFILES_DIR := $(CURDIR)/dbt
 export PYTHONUTF8 := 1
 
 .DEFAULT_GOAL := help
-.PHONY: help setup seed seed-extra pipeline verify quick explain plan dbt-test \
+.PHONY: help setup seed seed-extra pipeline verify verify-core quick explain plan dbt-test \
         dbt-docs crash-test compact reset clean
 
 ifeq ($(OS),Windows_NT)
@@ -63,6 +63,9 @@ pipeline:  ## chạy đường ống một lượt (14 ngày vận hành)
 
 verify:  ## ⭐ xoá kho, chạy 3 lượt, in bảng chấm — dùng lệnh này liên tục
 	@"$(PY)" tools/verify.py
+
+verify-core:  ## chạy 3 nhiệm vụ chính, bỏ qua bài mở rộng dashboard
+	@"$(PY)" tools/verify.py --skip-extra
 
 quick:  ## như verify nhưng chỉ 1 lượt (nhanh, không kiểm tra tính ổn định)
 	@"$(PY)" tools/verify.py --runs 1
@@ -128,6 +131,9 @@ pipeline:  ## chạy đường ống một lượt (14 ngày vận hành)
 
 verify:  ## ⭐ xoá kho, chạy 3 lượt, in bảng chấm — dùng lệnh này liên tục
 	@$(PY) tools/verify.py
+
+verify-core:  ## chạy 3 nhiệm vụ chính, bỏ qua bài mở rộng dashboard
+	@$(PY) tools/verify.py --skip-extra
 
 quick:  ## như verify nhưng chỉ 1 lượt (nhanh, không kiểm tra tính ổn định)
 	@$(PY) tools/verify.py --runs 1

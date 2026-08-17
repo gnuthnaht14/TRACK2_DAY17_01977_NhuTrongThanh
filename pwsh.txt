@@ -1,0 +1,2 @@
+uv run --active tools\verify.py --runs 1 --skip-extra
+make verify-core
