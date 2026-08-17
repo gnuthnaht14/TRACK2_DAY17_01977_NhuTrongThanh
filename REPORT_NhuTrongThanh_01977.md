@@ -65,6 +65,9 @@ Tổng kết: 4 / 4 tiêu chí đạt.
 | Cách khắc phục | Trong gold_training_set.sql, đặt unique_key = 'ticket_id' và incremental_strategy = 'merge'. Giữ lọc theo run_date để backfill theo ngày. Trong DAG, đặt catchup=False và max_active_runs=1 để tránh schedule bù và ghi chồng run. |
 | Bằng chứng | Trước: 38.750 dòng / 12.480 ticket. Sau: 12.480 dòng / 12.480 ticket, không lặp. Đã thay đổi config DAG để tránh nhiều bên cùng ghi một lúc. |
 
+
+Minh chứng task 1:
+![task1_gold_training](attachments/gold_training_task1.jpg)
 ---
 
 ## 2 · Bảng đặc trưng theo ngày thiếu hàng ở các ngày quá khứ
@@ -84,6 +87,14 @@ Vì sao chọn P99 làm căn cứ thay vì max? Chi phí của mỗi lựa chọ
 
 ---
 
+Minh chứng task 2:
+chenh_lech_thoi_gia
+![chenh_lech_thoi_gian](attachments/thoi_gian_chenh_lech.jpg)
+gold_feature_daily
+![gold_feature_daily](attachments/gold_feature_daily.jpg)
+choose lookback day
+![choose lookback day](attachments/choose_lookback_day.jpg)
+
 ## 3 · Kiểu dữ liệu cột priority thay đổi giữa chu kỳ
 
 | | |
@@ -94,11 +105,24 @@ Vì sao chọn P99 làm căn cứ thay vì max? Chi phí của mỗi lựa chọ
 | Cách khắc phục | Viết macro normalize_priority dùng CASE. Trong silver_tickets, chuẩn hóa và lọc priority_clean is not null trước row_number() để vẫn giữ trạng thái hợp lệ trước đó của ticket. quarantine_tickets lọc cùng macro trả NULL. Bật contract, thêm not_null và accepted_values [1, 2, 3, 4]. |
 | Bằng chứng | quarantine_tickets có 312 dòng, checksum ba lượt là ebb89036fb. silver_tickets.priority sạch, dbt test 11/11 pass và Silver vẫn giữ đủ 12.480 ticket. |
 
-Câu hỏi thiết kế: nên chặn ở tầng Bronze hay Silver? Vì sao không để pipeline dừng khi gặp bản ghi lỗi?
+Câu hỏi thiết kế: 
+1. nên chặn ở tầng Bronze hay Silver? 
+2. Vì sao không để pipeline dừng(dbt test fail và dừng cả DAG) khi gặp row lỗi? Cân nhắc quy mô, số row lỗi so với tổng số row hợp lệ.
 
-> Bronze phải giữ payload nguồn nguyên trạng để audit, replay và điều tra nguyên nhân. Chuẩn hóa và kiểm tra contract nên diễn ra ở Silver. Không nên để cả DAG dừng chỉ vì 312 bản ghi CDC lỗi, trong khi hơn 130.000 event và 31.200 chunk hợp lệ vẫn cần được phục vụ. Quarantine tách lỗi ra thành hàng đợi để theo dõi và xử lý lại.
+> 1. Bronze phải giữ payload nguồn nguyên trạng để audit, replay và điều tra nguyên nhân. Chuẩn hóa và kiểm tra contract nên diễn ra ở Silver. 
+> 2. Không nên để cả DAG dừng chỉ vì 312 bản ghi CDC lỗi, trong khi hơn 130.000 event và 31.200 chunk hợp lệ vẫn cần được phục vụ. Quarantine tách lỗi ra thành hàng đợi để theo dõi và xử lý lại.
 
 ---
+
+Minh chứng task 3:
+mapping
+![mapping](attachments/mapping.jpg)
+silver_ticket:
+![silver_ticket](attachments/silver_ticket_sql.jpg)
+silver_schema:
+![silver_schema](attachments/silver_schema.jpg)
+quarantine_tickets:
+![quarantine_ticket](attachments/quarantine_ticket.jpg)
 
 ## 4 · Mở rộng, không bắt buộc: bài trong EXTRA.md
 

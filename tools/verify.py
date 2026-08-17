@@ -26,7 +26,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from tools.common import (  # noqa: E402
-    DBT_DIR, EXPECTED, GOLD_TABLES, ROOT, WAREHOUSE, checksum, connect,
+    DBT_DIR, EXPECTED, GOLD_TABLES, WAREHOUSE, checksum, connect,
     expected_counts, fmt, row_count, table_exists,
 )
 from tools.run_pipeline import reset_warehouse, run_once  # noqa: E402
@@ -147,30 +147,12 @@ def dashboard_check() -> dict:
     }
 
 
-def extra_dataset_available() -> bool:
-    """Return whether the optional dashboard Parquet dataset is present.
-
-    The baseline JSON is committed in ``expected/`` so its presence alone is
-    not evidence that ``make seed-extra`` has been run.  DuckDB raises an
-    IOException when read_parquet() receives a glob matching no files.
-    """
-    data_dir = ROOT / "data"
-    return (
-        any((data_dir / "gold_events").glob("*.parquet"))
-        or any((data_dir / "gold_events_v2").rglob("*.parquet"))
-    )
-
-
 # ------------------------------------------------------------------- main
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", type=int, default=3)
     ap.add_argument("--no-reset", action="store_true")
     ap.add_argument("--json", action="store_true")
-    ap.add_argument(
-        "--skip-extra", action="store_true",
-        help="bỏ qua kiểm tra dashboard trong EXTRA.md",
-    )
     ap.add_argument("--strict", action="store_true",
                     help="thoát với mã != 0 khi chưa đạt (dùng cho CI)")
     args = ap.parse_args()
@@ -246,14 +228,7 @@ def main() -> int:
         print(f"  {label:<44}{OK if ok else BAD} {detail}")
 
     from tools.explain import BASELINE_FILE
-    # The dashboard check belongs to EXTRA.md.  A baseline file may be
-    # present in a fresh checkout even though the optional Parquet data is
-    # absent, so do not call read_parquet() until the data actually exists.
-    d = dashboard_check() if (
-        not args.skip_extra
-        and BASELINE_FILE.exists()
-        and extra_dataset_available()
-    ) else None
+    d = dashboard_check() if BASELINE_FILE.exists() else None
     if d and "note" not in d:
         print(f"  {'dashboard rows scanned':<44}"
               f"{OK if d['ok'] else BAD} {d['before']:,} → {d['after']:,} "
